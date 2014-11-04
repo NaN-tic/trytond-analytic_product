@@ -211,8 +211,6 @@ Confirm purchase request and check purchase line has valid analytic accounts::
     >>> request.save()
     >>> create_purchase = Wizard('purchase.request.create_purchase',
     ...     models=[request])
-    >>> create_purchase.form.payment_term = payment_term
-    >>> create_purchase.execute('start')
     >>> purchase_line, = PurchaseLine.find([])
     >>> purchase_line.quantity
     15.0
