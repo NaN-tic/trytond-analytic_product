@@ -58,10 +58,6 @@ msgctxt "model:product.template.company,name:"
 msgid "Analytics configuration by Product Template and Company"
 msgstr "Configuració analítica per plantilla de producte i empresa"
 
-msgctxt "view:product.template.company:"
-msgid "Configuration by company"
-msgstr "Configuració per empresa"
-
 msgctxt "view:product.template:"
 msgid "Analytic Accounting"
 msgstr "Comptabilitat analítica"
