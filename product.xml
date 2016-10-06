@@ -3,11 +3,36 @@
      copyright notices and license terms. -->
 <tryton>
     <data>
+        <!-- product.template -->
         <record model="ir.ui.view" id="template_view_form">
             <field name="model">product.template</field>
-            <field name="type">form</field>
+            <field name="type" eval="None"/>
             <field name="inherit" ref="product.template_view_form"/>
             <field name="name">template_form</field>
+        </record>
+
+        <!-- product.template.company -->
+        <record model="ir.ui.view" id="template_company_view_form">
+            <field name="model">product.template.company</field>
+            <field name="type">form</field>
+            <field name="name">template_company_form</field>
+        </record>
+
+        <record model="ir.ui.view" id="template_company_view_list">
+            <field name="model">product.template.company</field>
+            <field name="type">tree</field>
+            <field name="name">template_company_list</field>
+        </record>
+
+        <record model="ir.rule.group" id="rule_group_company_template">
+            <field name="model" search="[('model', '=', 'product.template.company')]"/>
+            <field name="global_p" eval="True"/>
+        </record>
+        <record model="ir.rule" id="rule_company_template1">
+            <field name="rule_group" ref="rule_group_company_template"/>
+            <field name="domain"
+                eval="[('company', 'child_of', [Eval('user', {}).get('company', -1)], 'parent')]"
+                pyson="1"/>
         </record>
     </data>
 </tryton>

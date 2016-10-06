@@ -1,277 +1,254 @@
-#The COPYRIGHT file at the top level of this repository contains the full
-#copyright notices and license terms.
-from trytond.model import fields
+# The COPYRIGHT file at the top level of this repository contains the full
+# copyright notices and license terms.
+from sql.aggregate import Min
+from sql.conditionals import Coalesce
+
+from trytond import backend
+from trytond.model import ModelView, Unique, fields
 from trytond.pool import Pool, PoolMeta
-from trytond.pyson import Eval
+from trytond.pyson import Eval, If
 from trytond.transaction import Transaction
 
-__all__ = ['Template', 'Account', 'InvoiceLine', 'SaleLine', 'PurchaseLine',
-    'CreatePurchase']
-__metaclass__ = PoolMeta
+from trytond.modules.analytic_account import AnalyticMixin
 
 
-class AnalyticMixin:
-
-    def analytic_accounts_available(self):
-        return True
-
-    @classmethod
-    def analytic_accounts_available_create(cls, vals):
-        return True
-
-    @classmethod
-    def _view_look_dom_arch(cls, tree, type, field_children=None):
-        AnalyticAccount = Pool().get('analytic_account.account')
-        AnalyticAccount.convert_view(tree)
-        return super(AnalyticMixin, cls)._view_look_dom_arch(tree, type,
-            field_children=field_children)
-
-    @classmethod
-    def fields_get(cls, fields_names=None):
-        AnalyticAccount = Pool().get('analytic_account.account')
-
-        fields = super(AnalyticMixin, cls).fields_get(fields_names)
-
-        analytic_accounts_field = super(AnalyticMixin, cls).fields_get(
-                ['analytic_accounts'])['analytic_accounts']
-
-        fields.update(AnalyticAccount.analytic_accounts_fields_get(
-                analytic_accounts_field, fields_names,
-                states=cls.analytic_accounts.states,
-                required_states=Eval('type') == 'record'))
-        return fields
-
-    @classmethod
-    def default_get(cls, fields, with_rec_name=True):
-        fields = [x for x in fields if not x.startswith('analytic_account_')]
-        return super(AnalyticMixin, cls).default_get(fields,
-            with_rec_name=with_rec_name)
-
-    @classmethod
-    def read(cls, ids, fields_names=None):
-        if fields_names:
-            fields_names2 = [x for x in fields_names
-                    if not x.startswith('analytic_account_')]
-        else:
-            fields_names2 = fields_names
-
-        res = super(AnalyticMixin, cls).read(ids, fields_names=fields_names2)
-
-        if not fields_names:
-            fields_names = cls._fields.keys()
-
-        root_ids = []
-        for field in fields_names:
-            if field.startswith('analytic_account_') and '.' not in field:
-                root_ids.append(int(field[len('analytic_account_'):]))
-        if root_ids:
-            id2record = {}
-            for record in res:
-                id2record[record['id']] = record
-            records = cls.browse(ids)
-            for record in records:
-                for root_id in root_ids:
-                    id2record[record.id]['analytic_account_'
-                        + str(root_id)] = None
-                if not record.analytic_accounts_available():
-                    continue
-                if not record.analytic_accounts:
-                    continue
-                for account in record.analytic_accounts.accounts:
-                    if account.root.id in root_ids:
-                        id2record[record.id]['analytic_account_'
-                            + str(account.root.id)] = account.id
-                        for field in fields_names:
-                            if field.startswith('analytic_account_'
-                                    + str(account.root.id) + '.'):
-                                ham, field2 = field.split('.', 1)
-                                id2record[record.id][field] = account[field2]
-        return res
-
-    @classmethod
-    def create(cls, vlist):
-        Selection = Pool().get('analytic_account.account.selection')
-        vlist = [x.copy() for x in vlist]
-        to_write = []
-        for vals in vlist:
-            selection_vals = {}
-            for field in vals.keys():
-                if field.startswith('analytic_account_'):
-                    if vals[field]:
-                        selection_vals.setdefault('accounts', [])
-                        selection_vals['accounts'].append(('add',
-                                [vals[field]]))
-                    del vals[field]
-            if vals.get('analytic_accounts'):
-                to_write.extend((
-                        [Selection(vals['analytic_accounts'])],
-                        selection_vals
-                        ))
-            elif cls.analytic_accounts_available_create(vals):
-                selection, = Selection.create([selection_vals])
-                vals['analytic_accounts'] = selection.id
-        if to_write:
-            Selection.write(*to_write)
-        return super(AnalyticMixin, cls).create(vlist)
-
-    @classmethod
-    def write(cls, *args):
-        Selection = Pool().get('analytic_account.account.selection')
-        actions = iter(args)
-        args = []
-        to_write = []
-        for records, vals in zip(actions, actions):
-            vals = vals.copy()
-            selection_vals = {}
-            for field in vals.keys():
-                if field.startswith('analytic_account_'):
-                    root_id = int(field[len('analytic_account_'):])
-                    selection_vals[root_id] = vals[field]
-                    del vals[field]
-            if selection_vals:
-                for record in records:
-                    if not record.analytic_accounts_available():
-                        continue
-                    accounts = []
-                    if not record.analytic_accounts:
-                        # Create missing selection
-                        with Transaction().set_user(0):
-                                selection, = Selection.create([{}])
-                        cls.write([record], {
-                                'analytic_accounts': selection.id,
-                                })
-                    for account in record.analytic_accounts.accounts:
-                        if account.root.id in selection_vals:
-                            value = selection_vals[account.root.id]
-                            if value:
-                                accounts.append(value)
-                        else:
-                            accounts.append(account.id)
-                    for account_id in selection_vals.values():
-                        if account_id \
-                                and account_id not in accounts:
-                            accounts.append(account_id)
-                    to_remove = list(
-                        set((a.id for a in
-                                record.analytic_accounts.accounts))
-                        - set(accounts))
-                    to_write.extend(([record.analytic_accounts], {
-                            'accounts': [
-                                ('remove', to_remove),
-                                ('add', accounts),
-                                ],
-                            }))
-            args.extend((records, vals))
-        if to_write:
-            Selection.write(*to_write)
-        super(AnalyticMixin, cls).write(*args)
-
-    @classmethod
-    def delete(cls, records):
-        Selection = Pool().get('analytic_account.account.selection')
-
-        selection_ids = []
-        for record in records:
-            if record.analytic_accounts:
-                selection_ids.append(record.analytic_accounts.id)
-
-        super(AnalyticMixin, cls).delete(records)
-        Selection.delete(Selection.browse(selection_ids))
-
-    @classmethod
-    def copy(cls, records, default=None):
-        Selection = Pool().get('analytic_account.account.selection')
-
-        new_records = super(AnalyticMixin, cls).copy(records, default=default)
-
-        to_write = []
-        for record in new_records:
-            if record.analytic_accounts:
-                selection, = Selection.copy([record.analytic_accounts])
-                to_write.extend([
-                        [record], {
-                        'analytic_accounts': selection.id,
-                        }])
-        if to_write:
-            cls.write(*to_write)
-        return new_records
+__all__ = ['Template', 'TemplateCompany', 'AnalyticAccountEntry',
+    'InvoiceLine', 'SaleLine', 'PurchaseLine', 'CreatePurchase']
 
 
-class Template(AnalyticMixin):
+class Template:
+    __metaclass__ = PoolMeta
     __name__ = 'product.template'
+    companies = fields.One2Many('product.template.company', 'template',
+        'Configuration by company')
 
-    analytic_accounts = fields.Many2One(
-        'analytic_account.account.selection', 'Analytic Accounts')
 
-
-class Account:
-    __name__ = 'analytic_account.account'
-
-    @classmethod
-    def delete(cls, accounts):
-        pool = Pool()
-        Template = pool.get('product.template')
-        super(Account, cls).delete(accounts)
-        # Restart the cache on the fields_view_get method
-        Template._fields_view_get_cache.clear()
+class TemplateCompany(AnalyticMixin, ModelView):
+    '''Analytics configuration by Product Template and Company'''
+    __name__ = 'product.template.company'
+    template = fields.Many2One('product.template', 'Template', required=True,
+        readonly=True, ondelete='CASCADE')
+    company = fields.Many2One('company.company', 'Company', required=True,
+        ondelete='CASCADE')
 
     @classmethod
-    def create(cls, vlist):
-        pool = Pool()
-        Template = pool.get('product.template')
-        accounts = super(Account, cls).create(vlist)
-        # Restart the cache on the fields_view_get method
-        Template._fields_view_get_cache.clear()
-        return accounts
+    def __setup__(cls):
+        super(TemplateCompany, cls).__setup__()
+        cls.analytic_accounts.domain = [
+            ('company', '=', If(~Eval('company'),
+                    Eval('context', {}).get('company', -1),
+                    Eval('company', -1))),
+            ]
+        cls.analytic_accounts.depends.append('company')
+        t = cls.__table__()
+        cls._sql_constraints = [
+            ('company_uniq', Unique(t, t.template, t.company),
+                'The Company must to be unique per Product Template.')
+            ]
 
     @classmethod
-    def write(cls, *args):
+    def __register__(cls, module_name):
         pool = Pool()
+        Account = pool.get('analytic_account.account')
+        AccountEntry = pool.get('analytic.account.entry')
+        Company = pool.get('company.company')
         Template = pool.get('product.template')
-        super(Account, cls).write(*args)
-        # Restart the cache on the fields_view_get method of
-        Template._fields_view_get_cache.clear()
+        TableHandler = backend.get('TableHandler')
+        cursor = Transaction().connection.cursor()
+
+        super(TemplateCompany, cls).__register__(module_name)
+
+        template_handler = TableHandler(Template, module_name)
+        # Migration from 3.4: analytic accounting in product.template changed
+        # to reference field to new product.template.company model
+        if template_handler.column_exist('analytic_accounts'):
+            account = Account.__table__()
+            company = Company.__table__()
+            entry = AccountEntry.__table__()
+            template = Template.__table__()
+            table = cls.__table__()
+
+            cursor.execute(*company.select(company.id,
+                    order_by=company.id,
+                    limit=1))
+            default_company_id, = cursor.fetchone()
+
+            cursor.execute(*table.insert([
+                        table.create_uid,
+                        table.create_date,
+                        table.template,
+                        table.company,
+                        ],
+                    template.join(entry,
+                        condition=(
+                            template.analytic_accounts == entry.selection)
+                        ).join(account, condition=(entry.account == account.id)
+                            ).select(
+                                Min(entry.create_uid),
+                                Min(entry.create_date),
+                                template.id,
+                                Coalesce(account.company, default_company_id),
+                                group_by=(template.id, account.company))))
+            cursor.execute(*template.join(entry,
+                    condition=(template.analytic_accounts == entry.selection)
+                    ).join(account, condition=(entry.account == account.id)
+                        ).join(table,
+                            condition=((table.template == template.id)
+                                & (table.company == account.company)
+                                )
+                            ).select(
+                                table.id, table.company,
+                                template.analytic_accounts,
+                                group_by=(table.id,
+                                    template.analytic_accounts)))
+            for loc_company_id, company_id, selection_id in cursor.fetchall():
+                cursor.execute(*entry.update(
+                        columns=[entry.origin],
+                        values=['%s,%s' % (
+                                TemplateCompany.__name__, loc_company_id)],
+                        from_=[account],
+                        where=((entry.account == account.id)
+                            & (account.company == company_id)
+                            & (entry.selection == selection_id))))
+            template_handler.drop_column('analytic_accounts')
+
+    @staticmethod
+    def default_company():
+        return Transaction().context.get('company')
 
 
-class AnalyticProductMixin:
+class AnalyticAccountEntry:
+    __metaclass__ = PoolMeta
+    __name__ = 'analytic.account.entry'
 
-    @fields.depends('product')
-    def on_change_product(self):
-        try:
-            res = super(AnalyticProductMixin, self).on_change_product()
-        except:
-            res = {}
+    @classmethod
+    def _get_origin(cls):
+        origins = super(AnalyticAccountEntry, cls)._get_origin()
+        return origins + ['product.template.company']
 
-        if self.product and self.product.analytic_accounts:
-            for account in self.product.analytic_accounts.accounts:
-                key = 'analytic_account_%d' % account.root.id
-                res[key] = account.id
-        return res
+    @fields.depends('origin')
+    def on_change_with_company(self, name=None):
+        pool = Pool()
+        TemplateCompany = pool.get('product.template.company')
+        company = super(AnalyticAccountEntry, self).on_change_with_company(
+            name)
+        if isinstance(self.origin, TemplateCompany):
+            company = self.origin.company.id
+        return company
+
+    @classmethod
+    def search_company(cls, name, clause):
+        domain = super(AnalyticAccountEntry, cls).search_company(name, clause),
+        return ['OR',
+            domain,
+            (('origin.company',) + tuple(clause[1:]) +
+                ('product.template.company',)),
+            ]
+
+
+class AnalyticProductMixin(object):
+
+    def _set_analytic_accounts(self, company_id):
+        if not getattr(self, 'product'):
+            return
+        pool = Pool()
+        AnalyticEntry = pool.get('analytic.account.entry')
+        root2account = {e.root: e.account for e in AnalyticEntry.search([
+                    ('origin.company', '=', company_id,
+                        'product.template.company'),
+                    ('origin.template', '=', self.product.template,
+                        'product.template.company'),
+                    ('account', '!=', None),
+                    ])}
+        if not hasattr(self, 'analytic_accounts'):
+            self.analytic_accounts = []
+        for current_entry in self.analytic_accounts:
+            if current_entry.root in root2account:
+                current_entry.account = root2account[current_entry.root]
+                del root2account[current_entry.root]
+        for root, account in root2account.items():
+            self.analytic_accounts.append(AnalyticEntry(
+                    root=root,
+                    account=account))
 
 
 class InvoiceLine(AnalyticProductMixin):
+    __metaclass__ = PoolMeta
     __name__ = 'account.invoice.line'
+
+    @fields.depends('product', 'analytic_accounts', 'company',
+        '_parent_invoice.company')
+    def on_change_product(self):
+        pool = Pool()
+        Invoice = pool.get('account.invoice')
+        super(InvoiceLine, self).on_change_product()
+        if not self.product:
+            return
+        if self.company:
+            company_id = self.company.id
+        elif self.invoice and self.invoice.company:
+            company_id = self.invoice.company.id
+        else:
+            company_id = Invoice.default_company()
+        self._set_analytic_accounts(company_id)
 
 
 class SaleLine(AnalyticProductMixin):
+    __metaclass__ = PoolMeta
     __name__ = 'sale.line'
+
+    @fields.depends('product', 'analytic_accounts', '_parent_sale.company')
+    def on_change_product(self):
+        pool = Pool()
+        Sale = pool.get('sale.sale')
+        super(SaleLine, self).on_change_product()
+        if not self.product:
+            return
+        if self.sale and self.sale.company:
+            company_id = self.sale.company.id
+        else:
+            company_id = Sale.default_company()
+        self._set_analytic_accounts(company_id)
 
 
 class PurchaseLine(AnalyticProductMixin):
+    __metaclass__ = PoolMeta
     __name__ = 'purchase.line'
+
+    @fields.depends('product', 'analytic_accounts', '_parent_purchase.company')
+    def on_change_product(self):
+        pool = Pool()
+        Purchase = pool.get('purchase.purchase')
+        super(PurchaseLine, self).on_change_product()
+        if not self.product:
+            return
+        if self.purchase and self.purchase.company:
+            company_id = self.purchase.company.id
+        else:
+            company_id = Purchase.default_company()
+        self._set_analytic_accounts(company_id)
 
 
 class CreatePurchase:
+    __metaclass__ = PoolMeta
     __name__ = 'purchase.request.create_purchase'
 
     @classmethod
     def compute_purchase_line(cls, request, purchase):
         pool = Pool()
-        Selection = pool.get('analytic_account.account.selection')
+        AnalyticEntry = pool.get('analytic.account.entry')
         line = super(CreatePurchase, cls).compute_purchase_line(request,
             purchase)
-        if line.product.template.analytic_accounts:
-            selection, = Selection.copy(
-                [line.product.template.analytic_accounts])
-            line.analytic_accounts = selection
+
+        entries = AnalyticEntry.search([
+                ('origin.company', '=', request.company,
+                    'product.template.company'),
+                ('origin.template', '=', line.product.template,
+                    'product.template.company'),
+                ('account', '!=', None),
+                ])
+        if entries:
+            line.analytic_accounts = [AnalyticEntry(
+                    root=e.root,
+                    account=e.account) for e in entries]
         return line

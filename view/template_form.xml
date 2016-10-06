@@ -2,9 +2,9 @@
 <!-- The COPYRIGHT file at the top level of this repository contains the full
      copyright notices and license terms. -->
 <data>
-    <xpath expr="/form/notebook/page[@id='accounting']/field[@name='account_expense']" position="after">
-        <group col="2" colspan="4" name="analytic_accounts">
-            <field name="analytic_accounts"/>
-        </group>
+    <xpath expr="/form/notebook/page[@id='accounting']" position="after">
+        <page id="analytic_accounting" string="Analytic Accounting">
+            <field name="companies" mode="form,tree" colspan="4"/>
+        </page>
     </xpath>
 </data>
