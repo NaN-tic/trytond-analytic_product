@@ -2,17 +2,16 @@
 Analytic Product Scenario
 =========================
 
-=============
-General Setup
-=============
-
 Imports::
 
-    >>> import datetime
-    >>> from dateutil.relativedelta import relativedelta
     >>> from decimal import Decimal
     >>> from proteus import config, Model, Wizard
-    >>> today = datetime.date.today()
+    >>> from trytond.modules.company.tests.tools import create_company, \
+    ...     get_company
+    >>> from trytond.modules.account.tests.tools import create_fiscalyear, \
+    ...     create_chart, get_accounts
+    >>> from trytond.modules.account_invoice.tests.tools import \
+    ...     set_fiscalyear_invoice_sequences, create_payment_term
 
 Create database::
 
@@ -21,38 +20,17 @@ Create database::
 
 Install stock_reservation Module::
 
-    >>> Module = Model.get('ir.module.module')
+    >>> Module = Model.get('ir.module')
     >>> modules = Module.find([
     ...     ('name', 'in', ['analytic_product', 'analytic_purchase',
-    ...         'stock_supply'])])
+    ...         'stock_supply', 'analytic_sale'])])
     >>> Module.install([x.id for x in modules], config.context)
-    >>> Wizard('ir.module.module.install_upgrade').execute('upgrade')
+    >>> Wizard('ir.module.install_upgrade').execute('upgrade')
 
 Create company::
 
-    >>> Currency = Model.get('currency.currency')
-    >>> CurrencyRate = Model.get('currency.currency.rate')
-    >>> Company = Model.get('company.company')
-    >>> Party = Model.get('party.party')
-    >>> company_config = Wizard('company.company.config')
-    >>> company_config.execute('company')
-    >>> company = company_config.form
-    >>> party = Party(name='Dunder Mifflin')
-    >>> party.save()
-    >>> company.party = party
-    >>> currencies = Currency.find([('code', '=', 'USD')])
-    >>> if not currencies:
-    ...     currency = Currency(name='US Dollar', symbol='$', code='USD',
-    ...     rounding=Decimal('0.01'), mon_grouping='[3, 3, 0]',
-    ...     mon_decimal_point='.')
-    ...     currency.save()
-    ...     CurrencyRate(date=today + relativedelta(month=1, day=1),
-    ...     rate=Decimal('1.0'), currency=currency).save()
-    ... else:
-    ...     currency, = currencies
-    >>> company.currency = currency
-    >>> company_config.execute('add')
-    >>> company, = Company.find()
+    >>> _ = create_company()
+    >>> company = get_company()
 
 Reload the context::
 
@@ -61,61 +39,16 @@ Reload the context::
 
 Create fiscal year::
 
-    >>> FiscalYear = Model.get('account.fiscalyear')
-    >>> Sequence = Model.get('ir.sequence')
-    >>> SequenceStrict = Model.get('ir.sequence.strict')
-    >>> fiscalyear = FiscalYear(name=str(today.year))
-    >>> fiscalyear.start_date = today + relativedelta(month=1, day=1)
-    >>> fiscalyear.end_date = today + relativedelta(month=12, day=31)
-    >>> fiscalyear.company = company
-    >>> post_move_seq = Sequence(name=str(today.year), code='account.move',
-    ...      company=company)
-    >>> post_move_seq.save()
-    >>> fiscalyear.post_move_sequence = post_move_seq
-    >>> invoice_seq = SequenceStrict(name=str(today.year),
-    ...      code='account.invoice', company=company)
-    >>> invoice_seq.save()
-    >>> fiscalyear.out_invoice_sequence = invoice_seq
-    >>> fiscalyear.in_invoice_sequence = invoice_seq
-    >>> fiscalyear.out_credit_note_sequence = invoice_seq
-    >>> fiscalyear.in_credit_note_sequence = invoice_seq
-    >>> fiscalyear.save()
-    >>> FiscalYear.create_period([fiscalyear.id], config.context)
+    >>> fiscalyear = set_fiscalyear_invoice_sequences(
+    ...     create_fiscalyear(company))
+    >>> fiscalyear.click('create_period')
 
 Create chart of accounts::
 
-    >>> AccountTemplate = Model.get('account.account.template')
-    >>> Account = Model.get('account.account')
-    >>> account_template, = AccountTemplate.find([('parent', '=', None)])
-    >>> create_chart = Wizard('account.create_chart')
-    >>> create_chart.execute('account')
-    >>> create_chart.form.account_template = account_template
-    >>> create_chart.form.company = company
-    >>> create_chart.execute('create_account')
-    >>> receivable, = Account.find([
-    ...         ('kind', '=', 'receivable'),
-    ...         ('company', '=', company.id),
-    ...         ])
-    >>> payable, = Account.find([
-    ...         ('kind', '=', 'payable'),
-    ...         ('company', '=', company.id),
-    ...         ])
-    >>> revenue, = Account.find([
-    ...         ('kind', '=', 'revenue'),
-    ...         ('company', '=', company.id),
-    ...         ])
-    >>> expense, = Account.find([
-    ...         ('kind', '=', 'expense'),
-    ...         ('company', '=', company.id),
-    ...         ])
-    >>> account_tax, = Account.find([
-    ...         ('kind', '=', 'other'),
-    ...         ('company', '=', company.id),
-    ...         ('name', '=', 'Main Tax'),
-    ...         ])
-    >>> create_chart.form.account_receivable = receivable
-    >>> create_chart.form.account_payable = payable
-    >>> create_chart.execute('create_properties')
+    >>> _ = create_chart(company)
+    >>> accounts = get_accounts(company)
+    >>> revenue = accounts['revenue']
+    >>> expense = accounts['expense']
 
 Create analytic accounts::
 
@@ -136,21 +69,14 @@ Create parties::
 
 Create payment term::
 
-    >>> PaymentTerm = Model.get('account.invoice.payment_term')
-    >>> PaymentTermLine = Model.get('account.invoice.payment_term.line')
-    >>> payment_term = PaymentTerm(name='Direct')
-    >>> payment_term_line = PaymentTermLine(type='remainder', days=0)
-    >>> payment_term.lines.append(payment_term_line)
+    >>> payment_term = create_payment_term()
     >>> payment_term.save()
 
 Create product::
 
     >>> ProductUom = Model.get('product.uom')
     >>> ProductTemplate = Model.get('product.template')
-    >>> Product = Model.get('product.product')
-    >>> AnalyticSelection = Model.get('analytic_account.account.selection')
     >>> unit, = ProductUom.find([('name', '=', 'Unit')])
-    >>> product = Product()
     >>> template = ProductTemplate()
     >>> template.name = 'Product'
     >>> template.default_uom = unit
@@ -162,13 +88,12 @@ Create product::
     >>> template.cost_price_method = 'fixed'
     >>> template.account_expense = expense
     >>> template.account_revenue = revenue
-    >>> analytic_selection = AnalyticSelection()
-    >>> analytic_selection.accounts.append(analytic_account)
-    >>> analytic_selection.save()
-    >>> template.analytic_accounts = analytic_selection
+    >>> template_company = template.companies.new()
+    >>> len(template_company.analytic_accounts)
+    1
+    >>> template_company.analytic_accounts[0].account = analytic_account
     >>> template.save()
-    >>> product.template = template
-    >>> product.save()
+    >>> product, = template.products
 
 Get stock locations::
 
@@ -190,7 +115,6 @@ Create purchase order point::
     >>> order_point.min_quantity = 10
     >>> order_point.max_quantity = 15
     >>> order_point.save()
-
 
 Execute create purchase requests supply::
 
@@ -216,6 +140,57 @@ Confirm purchase request and check purchase line has valid analytic accounts::
     15.0
     >>> purchase_line.purchase.warehouse.storage_location == storage_loc
     True
-    >>> purchase_analytic_account, = purchase_line.analytic_accounts.accounts
-    >>> analytic_account == purchase_analytic_account
+    >>> len(purchase_line.analytic_accounts)
+    1
+    >>> purchase_line.analytic_accounts[0].account == analytic_account
+    True
+
+Analytic accounts set when select product in invoice line::
+
+    >>> Invoice = Model.get('account.invoice')
+    >>> invoice = Invoice()
+    >>> invoice.party = customer
+    >>> invoice.payment_term = payment_term
+    >>> line = invoice.lines.new()
+    >>> len(line.analytic_accounts)
+    1
+    >>> line.analytic_accounts[0].account
+    >>> line.product = product
+    >>> len(line.analytic_accounts)
+    1
+    >>> line.analytic_accounts[0].account == analytic_account
+    True
+
+Analytic accounts set when select product in purchase line::
+
+    >>> Purchase = Model.get('purchase.purchase')
+    >>> purchase = Purchase()
+    >>> purchase.party = supplier
+    >>> purchase.payment_term = payment_term
+    >>> purchase.invoice_method = 'order'
+    >>> purchase_line = purchase.lines.new()
+    >>> len(purchase_line.analytic_accounts)
+    1
+    >>> purchase_line.analytic_accounts[0].account
+    >>> purchase_line.product = product
+    >>> len(purchase_line.analytic_accounts)
+    1
+    >>> purchase_line.analytic_accounts[0].account == analytic_account
+    True
+
+Analytic accounts set when select product in sale line::
+
+    >>> Sale = Model.get('sale.sale')
+    >>> sale = Sale()
+    >>> sale.party = customer
+    >>> sale.payment_term = payment_term
+    >>> sale.invoice_method = 'order'
+    >>> sale_line = sale.lines.new()
+    >>> len(sale_line.analytic_accounts)
+    1
+    >>> sale_line.analytic_accounts[0].account
+    >>> sale_line.product = product
+    >>> len(sale_line.analytic_accounts)
+    1
+    >>> sale_line.analytic_accounts[0].account == analytic_account
     True
