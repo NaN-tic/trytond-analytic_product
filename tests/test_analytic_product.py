@@ -16,8 +16,8 @@ class AnalyticProductTestCase(ModuleTestCase):
 
 def suite():
     suite = trytond.tests.test_tryton.suite()
-    #suite.addTests(unittest.TestLoader().loadTestsFromTestCase(
-    #        AnalyticProductTestCase))
+    suite.addTests(unittest.TestLoader().loadTestsFromTestCase(
+            AnalyticProductTestCase))
     suite.addTests(doctest.DocFileSuite('scenario_analytic_product.rst',
             setUp=doctest_setup, tearDown=doctest_teardown, encoding='utf-8',
             checker=doctest_checker,
