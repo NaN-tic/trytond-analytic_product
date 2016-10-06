@@ -1,7 +1,67 @@
-# 
+#
 msgid ""
 msgstr "Content-Type: text/plain; charset=utf-8\n"
 
-msgctxt "field:product.template,analytic_accounts:"
+msgctxt "error:product.template.company:"
+msgid "Some mandatory root account are missing on \"%(name)s\""
+msgstr "Falten alguns comptes analítics obligatoris a \"%(name)s\"."
+
+msgctxt "error:product.template.company:"
+msgid "The Company must to be unique per Product Template."
+msgstr "L'empresa ha de ser única per plantilla de producte."
+
+msgctxt "field:product.template,companies:"
+msgid "Configuration by company"
+msgstr "Configuració per empresa"
+
+msgctxt "field:product.template.company,analytic_accounts:"
 msgid "Analytic Accounts"
 msgstr "Comptes analítics"
+
+msgctxt "field:product.template.company,analytic_accounts_size:"
+msgid "Analytic Accounts Size"
+msgstr "Mida dels comptes analítics"
+
+msgctxt "field:product.template.company,company:"
+msgid "Company"
+msgstr "Empresa"
+
+msgctxt "field:product.template.company,create_date:"
+msgid "Create Date"
+msgstr "Data creació"
+
+msgctxt "field:product.template.company,create_uid:"
+msgid "Create User"
+msgstr "Usuari creació"
+
+msgctxt "field:product.template.company,id:"
+msgid "ID"
+msgstr "Identificador"
+
+msgctxt "field:product.template.company,rec_name:"
+msgid "Name"
+msgstr "Nom"
+
+msgctxt "field:product.template.company,template:"
+msgid "Template"
+msgstr "Plantilla"
+
+msgctxt "field:product.template.company,write_date:"
+msgid "Write Date"
+msgstr "Data modificació"
+
+msgctxt "field:product.template.company,write_uid:"
+msgid "Write User"
+msgstr "Usuari modificació"
+
+msgctxt "model:product.template.company,name:"
+msgid "Analytics configuration by Product Template and Company"
+msgstr "Configuració analítica per plantilla de producte i empresa"
+
+msgctxt "view:product.template.company:"
+msgid "Configuration by company"
+msgstr "Configuració per empresa"
+
+msgctxt "view:product.template:"
+msgid "Analytic Accounting"
+msgstr "Comptabilitat analítica"
